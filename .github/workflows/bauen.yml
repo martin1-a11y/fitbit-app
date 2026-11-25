@@ -1,0 +1,100 @@
+# Version 1 · Baut die Fitbit-App (Pebble + unsere Zusätze) auf GitHubs Mac-Servern, legt die .ipa als
+# Release ab und trägt sie in die AltStore-Quelle altstore.json ein (AltStore zeigt dann „Update“).
+# Läuft bei jeder Änderung am Code auf main, oder von Hand: Reiter „Actions“ → „App bauen“ → „Run workflow“.
+name: App bauen
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '*.swift'
+      - 'einbauen.sh'
+      - 'quelle.py'
+      - '.github/workflows/bauen.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bauen
+  cancel-in-progress: false
+
+env:
+  PEBBLE_STAND: ac1b90fc08f923efe0d5f2d3621119f7835fea35
+
+jobs:
+  bauen:
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - name: Repo holen
+        uses: actions/checkout@v4
+
+      - name: Pebble holen (fester Stand)
+        run: |
+          git init -q pebble
+          git -C pebble remote add origin https://github.com/medpar/pebble
+          git -C pebble fetch -q --depth 1 origin "$PEBBLE_STAND"
+          git -C pebble checkout -q --detach FETCH_HEAD
+
+      - name: Unsere Zusätze einbauen
+        run: sh einbauen.sh pebble
+
+      - name: Bluetooth-Bausteine laden (Golden Gate, Mbed TLS)
+        run: ./pebble/scripts/prepare-native.sh
+
+      - name: Bauen (ohne Signatur)
+        working-directory: pebble
+        shell: bash
+        run: |
+          xcodebuild -version
+          cmake -S App -B .private/ios-project -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_DEPLOYMENT_TARGET=18.0 \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
+            -DAIR_DEVELOPMENT_TEAM=
+          xcodebuild -project .private/ios-project/Pebble.xcodeproj \
+            -scheme Pebble -configuration Release -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build > bau.log 2>&1 && rc=0 || rc=$?
+          grep -E 'warning: .*(FitbitTimer|GymHabits)|\*\* BUILD' bau.log || true
+          if [ "$rc" != 0 ]; then
+            echo "===== FEHLER ====="
+            grep -B2 -A8 'error:' bau.log | head -300 || tail -150 bau.log
+            exit 1
+          fi
+
+      - name: .ipa packen (ad-hoc signiert, damit AltStore die Berechtigungen sieht)
+        working-directory: pebble
+        run: |
+          APP=".private/ios-project/Release-iphoneos/Pebble.app"
+          test -d "$APP" || { echo "Pebble.app nicht gefunden"; exit 1; }
+          # Versionsnummer je Build, sonst erkennt AltStore kein Update
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.1.$GITHUB_RUN_NUMBER" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $GITHUB_RUN_NUMBER" "$APP/Info.plist"
+          codesign --force --sign - --entitlements App/Pebble.entitlements "$APP"
+          mkdir -p Payload && cp -R "$APP" Payload/
+          zip -qry "$GITHUB_WORKSPACE/Fitbit-App.ipa" Payload
+          ls -lh "$GITHUB_WORKSPACE/Fitbit-App.ipa"
+          echo "APP=$PWD/$APP" >> "$GITHUB_ENV"
+
+      - name: Als Release ablegen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "build-$GITHUB_RUN_NUMBER" Fitbit-App.ipa \
+            --target "$GITHUB_SHA" --latest \
+            --title "Build $GITHUB_RUN_NUMBER (Version 1.1.$GITHUB_RUN_NUMBER)" \
+            --notes "Wird über die AltStore-Quelle verteilt. Von Hand: Fitbit-App.ipa laden, AltStore → My Apps → +."
+
+      - name: AltStore-Quelle aktualisieren
+        run: |
+          git pull -q --rebase origin main
+          python3 quelle.py "$APP" Fitbit-App.ipa "$GITHUB_RUN_NUMBER" "build-$GITHUB_RUN_NUMBER"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add altstore.json
+          git commit -q -m "AltStore-Quelle: Build $GITHUB_RUN_NUMBER"
+          git push -q origin HEAD:main
+# Ende Version 1
