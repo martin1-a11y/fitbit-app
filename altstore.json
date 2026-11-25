@@ -1,0 +1,37 @@
+{
+  "name": "Fitbit-App",
+  "identifier": "de.fitbittimer.quelle",
+  "sourceURL": "https://raw.githubusercontent.com/martin1-a11y/fitbit-app/main/altstore.json",
+  "apps": [
+    {
+      "name": "Pebble",
+      "bundleIdentifier": "de.fitbittimer.app",
+      "developerName": "privat",
+      "subtitle": "Fitbit Air: Timer, Gym, Habits",
+      "localizedDescription": "Pebble (github.com/medpar/pebble) mit Fitbit-Timer, Gym-Tab und Habit-Tracker.",
+      "iconURL": "https://raw.githubusercontent.com/medpar/pebble/ac1b90fc08f923efe0d5f2d3621119f7835fea35/App/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
+      "tintColor": "#3478F6",
+      "versions": [
+        {
+          "version": "1.1.1",
+          "buildVersion": "1",
+          "date": "2026-11-25T22:00:39Z",
+          "localizedDescription": "Build 1",
+          "downloadURL": "https://github.com/martin1-a11y/fitbit-app/releases/download/build-1/Fitbit-App.ipa",
+          "size": 1209586,
+          "minOSVersion": "18.0"
+        }
+      ],
+      "appPermissions": {
+        "entitlements": [
+          "com.apple.developer.healthkit"
+        ],
+        "privacy": {
+          "NSBluetoothAlwaysUsageDescription": "Pebble connects to your Fitbit Air to manage alarms, read activity and deliver vibration alerts.",
+          "NSHealthShareUsageDescription": "Pebble reads steps, sleep, resting heart rate, HRV, workouts and your age to show trends against your own usual range."
+        }
+      }
+    }
+  ],
+  "news": []
+}
