@@ -58,7 +58,7 @@ jobs:
             -destination 'generic/platform=iOS' \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             build > bau.log 2>&1 && rc=0 || rc=$?
-          grep -E 'warning: .*(FitbitTimer|GymHabits)|\*\* BUILD' bau.log || true
+          grep -E 'warning: .*(FitbitTimer|GymHabits|TrendsScreen)|\*\* BUILD' bau.log || true
           if [ "$rc" != 0 ]; then
             echo "===== FEHLER ====="
             grep -B2 -A8 'error:' bau.log | head -300 || tail -150 bau.log

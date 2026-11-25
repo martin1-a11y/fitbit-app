@@ -1,4 +1,4 @@
-// Version 1 · Gym-Tab und Habit-Tracker: Zusatz zu Pebble (github.com/medpar/pebble, Stand ac1b90f)
+// Version 2 · Gym-Tab und Habit-Tracker: Zusatz zu Pebble (github.com/medpar/pebble, Stand ac1b90f)
 // Bauplan: siehe Repo „Projekte“ (privat), fitbit/archiv/GYM-HABITS.md. Braucht das Armband nicht – nur Oberfläche + Speicher auf dem iPhone.
 // Eingehängt über zwei kleine Änderungen, die einbauen.sh macht:
 //   PebbleApp.swift  → Tab „Gym“ (GymScreen) in RootView
@@ -153,6 +153,7 @@ private struct GymTagScreen: View {
     @State private var neu = false
     @State private var bearbeite: GymUebung?
     @State private var umbenennen = false
+    @State private var liste = false
     @State private var name = ""
 
     var body: some View {
@@ -163,7 +164,7 @@ private struct GymTagScreen: View {
                     ContentUnavailableView {
                         Label("Noch keine Übungen", systemImage: "list.bullet")
                     } description: {
-                        Text("Oben rechts mit + eine Übung mit Gewicht anlegen.")
+                        Text("Oben rechts mit + eine Übung anlegen oder über ⋯ eine ganze Liste einfügen.")
                     }
                     .listRowBackground(Color.clear)
                 } else {
@@ -184,9 +185,6 @@ private struct GymTagScreen: View {
                             }
                         }
                         .onMove { von, nach in s.tag(tagID) { $0.uebungen.move(fromOffsets: von, toOffset: nach) } }
-                    } footer: {
-                        Text("Antippen = erledigt (grau). Gewicht antippen = ändern. Halten und ziehen = Reihenfolge. Haken verschwinden nach 4 Stunden von selbst.")
-                            .font(.footnote).foregroundStyle(Tone.ink3).padding(.top, 6)
                     }
                     .listRowBackground(Tone.surface)
                 }
@@ -197,6 +195,7 @@ private struct GymTagScreen: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    Button("Liste einfügen", systemImage: "list.bullet.clipboard") { liste = true }
                     Button("Tag umbenennen", systemImage: "pencil") { name = tag?.name ?? ""; umbenennen = true }
                     Button("Alle Haken entfernen", systemImage: "arrow.counterclockwise") {
                         s.tag(tagID) { t in for i in t.uebungen.indices { t.uebungen[i].erledigtAm = nil } }
@@ -218,6 +217,20 @@ private struct GymTagScreen: View {
                 }
             } loeschen: {
                 s.tag(tagID) { $0.uebungen.removeAll { $0.id == u.id } }
+            }
+        }
+        .sheet(isPresented: $liste) {
+            UebungListeEinfuegen { neue in
+                s.tag(tagID) { t in
+                    for n in neue {
+                        // Gleichnamige Übung: nur Gewicht übernehmen, nicht doppelt anlegen
+                        if let i = t.uebungen.firstIndex(where: { $0.name.lowercased() == n.name.lowercased() }) {
+                            if !n.gewicht.isEmpty { t.uebungen[i].gewicht = n.gewicht }
+                        } else {
+                            t.uebungen.append(n)
+                        }
+                    }
+                }
             }
         }
         .alert("Tag umbenennen", isPresented: $umbenennen) {
@@ -262,6 +275,84 @@ private struct UebungZeile: View {
         .animation(.easeOut(duration: 0.15), value: fertig)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(uebung.name), \(uebung.gewicht)\(fertig ? ", erledigt" : "")")
+    }
+}
+
+/// Liste einfügen (z. B. von Claude): eine Übung je Zeile, am besten „Übung | Gewicht“.
+/// Erkannt werden auch „Übung: 40 kg“, „Übung – 40 kg“, „Bankdrücken 3x10 40 kg“; Aufzählungszeichen und
+/// Nummern vorne fallen weg, Zeilen mit Doppelpunkt am Ende gelten als Überschrift.
+private struct UebungListeEinfuegen: View {
+    let hinzufuegen: ([GymUebung]) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var text = ""
+
+    var body: some View {
+        let erkannt = Self.lesen(text)
+        NavigationStack {
+            Form {
+                Section {
+                    TextEditor(text: $text)
+                        .frame(minHeight: 150)
+                        .font(.body)
+                        .autocorrectionDisabled()
+                    PasteButton(payloadType: String.self) { teile in
+                        if let t = teile.first { text = t }
+                    }
+                    .labelStyle(.titleAndIcon)
+                } footer: {
+                    Text("Eine Übung pro Zeile, z. B. „Bankdrücken | 40 kg“.")
+                }
+                if !erkannt.isEmpty {
+                    Section("Erkannt: \(erkannt.count)") {
+                        ForEach(erkannt) { u in
+                            HStack {
+                                Text(u.name).foregroundStyle(Tone.ink)
+                                Spacer()
+                                Text(u.gewicht.isEmpty ? "–" : u.gewicht).monospacedDigit().foregroundStyle(Tone.ink2)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Liste einfügen")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Abbrechen") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Hinzufügen") { hinzufuegen(erkannt); dismiss() }
+                        .disabled(erkannt.isEmpty)
+                }
+            }
+        }
+        .presentationDetents([.large])
+    }
+
+    static func lesen(_ text: String) -> [GymUebung] {
+        var ergebnis: [GymUebung] = []
+        for roh in text.components(separatedBy: .newlines) {
+            var zeile = roh.trimmingCharacters(in: .whitespaces)
+            // Aufzählungszeichen, Nummern („1.“, „2)“), Kästchen und Markdown-Fett vorne weg
+            zeile = zeile.replacingOccurrences(of: #"^(?:[-•*–·▪◦]|\d+[.)]|\[[ xX]?\])\s*"#, with: "", options: .regularExpression)
+            zeile = zeile.replacingOccurrences(of: "**", with: "").trimmingCharacters(in: .whitespaces)
+            if zeile.isEmpty || zeile.hasSuffix(":") { continue }
+            var name = zeile
+            var gewicht = ""
+            if let strich = zeile.firstIndex(of: "|") {
+                name = String(zeile[..<strich])
+                gewicht = String(zeile[zeile.index(after: strich)...])
+            } else if let kg = zeile.range(of: #"\d+(?:[.,]\d+)?\s*(?:kg|lbs?)\b"#, options: [.regularExpression, .caseInsensitive]) {
+                gewicht = String(zeile[kg])
+                name = zeile.replacingCharacters(in: kg, with: "")
+            } else if let trenner = zeile.range(of: #"\s[–-]\s|:\s"#, options: .regularExpression) {
+                name = String(zeile[..<trenner.lowerBound])
+                gewicht = String(zeile[trenner.upperBound...])
+            }
+            let rand = CharacterSet.whitespaces.union(CharacterSet(charactersIn: "-–:,@|·"))
+            name = name.trimmingCharacters(in: rand)
+            gewicht = gewicht.trimmingCharacters(in: rand)
+            if !name.isEmpty { ergebnis.append(GymUebung(name: name, gewicht: gewicht)) }
+        }
+        return ergebnis
     }
 }
 
@@ -520,4 +611,4 @@ private struct HabitEditor: View {
         .presentationDetents([.medium, .large])
     }
 }
-// Ende Version 1
+// Ende Version 2
