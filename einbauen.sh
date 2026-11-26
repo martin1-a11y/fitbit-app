@@ -1,5 +1,5 @@
 #!/bin/sh
-# Version 2 · Baut unsere Zusätze in Pebble ein (wird von GitHub Actions aufgerufen, siehe
+# Version 3 · Baut unsere Zusätze in Pebble ein (wird von GitHub Actions aufgerufen, siehe
 # .github/workflows/bauen.yml). Aufruf:  sh einbauen.sh <Pebble-Ordner>
 # Pebble muss auf dem festen Stand ac1b90f stehen – die Änderungen unten passen genau dazu.
 set -eu
@@ -25,5 +25,9 @@ grep -q 'fitbitTimer.trendReihenfolge' App/UI/TrendsScreen.swift || halt "Trends
 perl -pi -e 's/PRODUCT_BUNDLE_IDENTIFIER "com\.medpar\.air\.companion"/PRODUCT_BUNDLE_IDENTIFIER "de.fitbittimer.app"/' App/CMakeLists.txt
 grep -q 'de.fitbittimer.app' App/CMakeLists.txt || halt "App-Kennung ließ sich nicht setzen."
 
+# 4. Apple Health: echten Fehlertext zeigen statt nur „didn't finish“ (Fehlersuche beim Import)
+perl -0pi -e 's/message = "Apple Health import didn\x{2019}t finish\. Your history is unchanged\."/message = "Apple Health import didn\x{2019}t finish: \\(error.localizedDescription)"/ or die "kein Treffer\n"' -CSD App/HealthImport.swift
+grep -q 'error.localizedDescription' App/HealthImport.swift || halt "Health-Fehlertext ließ sich nicht einbauen."
+
 echo "Zusätze eingebaut."
-# Ende Version 2
+# Ende Version 3
