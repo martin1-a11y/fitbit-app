@@ -1,4 +1,4 @@
-// Version 3 · Gym-Tab und Habit-Tracker: Zusatz zu Pebble (github.com/medpar/pebble, Stand ac1b90f)
+// Version 4 · Gym-Tab und Habit-Tracker: Zusatz zu Pebble (github.com/medpar/pebble, Stand ac1b90f)
 // Bauplan: siehe Repo „Projekte“ (privat), fitbit/archiv/GYM-HABITS.md. Braucht das Armband nicht – nur Oberfläche + Speicher auf dem iPhone.
 // Eingehängt über zwei kleine Änderungen, die einbauen.sh macht:
 //   PebbleApp.swift  → Tab „Gym“ (GymScreen) in RootView
@@ -418,20 +418,34 @@ enum HabitDatum {
         let wt = (kalender.component(.weekday, from: heute) + 5) % 7  // Mo = 0 … So = 6
         return plus(-wt, heute)
     }
-    /// Tage in Folge bis heute (zählt ab gestern, wenn heute noch offen ist).
-    static func serie(_ h: Habit) -> Int {
-        var tag = kalender.startOfDay(for: Date())
-        if !h.tage.contains(schluessel(tag)) { tag = plus(-1, tag) }
-        var n = 0
-        while h.tage.contains(schluessel(tag)) { n += 1; tag = plus(-1, tag) }
-        return n
+    static func monatsAnfang(_ d: Date) -> Date {
+        kalender.date(from: kalender.dateComponents([.year, .month], from: d))!
+    }
+    static func datum(_ schluessel: String) -> Date? {
+        let t = schluessel.split(separator: "-").compactMap { Int($0) }
+        guard t.count == 3 else { return nil }
+        return kalender.date(from: DateComponents(year: t[0], month: t[1], day: t[2]))
+    }
+    /// Wie viele Wochen das Raster zeigt: mindestens ein Jahr, sonst bis zum ältesten Eintrag zurück.
+    static func wochenAnzahl(_ h: Habit, bis letzteWoche: Date) -> Int {
+        guard let aeltester = h.tage.min().flatMap(datum) else { return 53 }
+        let tage = kalender.dateComponents([.day], from: wochenAnfang(aeltester), to: letzteWoche).day ?? 0
+        return min(520, max(53, tage / 7 + 1))
+    }
+    static let monate = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"]
+    /// Monatsname über der Woche, in der ein Monat beginnt (sonst nil).
+    static func monatsKopf(_ montag: Date) -> String? {
+        let sonntag = plus(6, montag)
+        guard kalender.component(.day, from: montag) == 1
+                || kalender.component(.month, from: sonntag) != kalender.component(.month, from: montag) else { return nil }
+        return monate[kalender.component(.month, from: sonntag) - 1]
     }
 }
 
 struct HabitTrackerView: View {
     @ObservedObject private var s = GymHabitSpeicher.shared
     @State private var neu = false
-    @State private var bearbeite: Habit?
+    @State private var offen: Habit?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -443,9 +457,7 @@ struct HabitTrackerView: View {
                 }
             }
             ForEach(s.habits) { h in
-                HabitKarte(habit: h) { schluessel in
-                    s.habit(h.id) { if $0.tage.contains(schluessel) { $0.tage.remove(schluessel) } else { $0.tage.insert(schluessel) } }
-                } bearbeiten: { bearbeite = h }
+                HabitKarte(habit: h) { s.umschalten(h.id, $0) } oeffnen: { offen = h }
             }
             PillButton(title: "Gewohnheit hinzufügen", symbol: "plus") { neu = true }
                 .padding(.top, 4)
@@ -453,42 +465,34 @@ struct HabitTrackerView: View {
         .sheet(isPresented: $neu) {
             HabitEditor(habit: nil, vorschlagFarbe: s.habits.count) { s.habits.append($0) }
         }
-        .sheet(item: $bearbeite) { h in
-            HabitEditor(habit: h, vorschlagFarbe: h.farbe) { geaendert in
-                s.habit(geaendert.id) { $0 = geaendert }
-            } loeschen: {
-                s.habits.removeAll { $0.id == h.id }
-            } verschieben: { richtung in
-                guard let i = s.habits.firstIndex(where: { $0.id == h.id }) else { return }
-                let j = i + richtung
-                if s.habits.indices.contains(j) { s.habits.swapAt(i, j) }
-            }
-        }
+        .sheet(item: $offen) { h in HabitDetail(id: h.id) }
+    }
+}
+
+extension GymHabitSpeicher {
+    func umschalten(_ id: UUID, _ schluessel: String) {
+        habit(id) { if $0.tage.contains(schluessel) { $0.tage.remove(schluessel) } else { $0.tage.insert(schluessel) } }
     }
 }
 
 private struct HabitKarte: View {
     let habit: Habit
     let umschalten: (String) -> Void
-    let bearbeiten: () -> Void
-
-    private let zelle: CGFloat = 18
-    private let luecke: CGFloat = 4
+    let oeffnen: () -> Void
 
     var body: some View {
         let farbe = HabitFarbe.farbe(habit.farbe)
         let heute = HabitDatum.schluessel(Date())
         let heuteFertig = habit.tage.contains(heute)
-        let serie = HabitDatum.serie(habit)
         Card {
             HStack(spacing: 10) {
-                Button(action: bearbeiten) {
-                    VStack(alignment: .leading, spacing: 2) {
+                // Antippen = Monatsübersicht (dort auch Bearbeiten)
+                Button(action: oeffnen) {
+                    HStack(spacing: 6) {
                         Text(habit.name).font(.headline).foregroundStyle(Tone.ink)
-                        Text(serie == 0 ? "Heute noch offen" : serie == 1 ? "1 Tag in Folge" : "\(serie) Tage in Folge")
-                            .font(.caption).foregroundStyle(Tone.ink2)
+                        Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Tone.ink3)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(PressStyle())
@@ -502,22 +506,37 @@ private struct HabitKarte: View {
                 .buttonStyle(PressStyle())
                 .accessibilityLabel(heuteFertig ? "Heute erledigt" : "Heute abhaken")
             }
-            raster(farbe: farbe).padding(.top, 14)
+            HabitRaster(habit: habit, farbe: farbe, umschalten: umschalten).padding(.top, 10)
         }
         .sensoryFeedback(.selection, trigger: habit.tage.count)
     }
+}
 
-    /// Kästchen-Raster wie bei HabitKit: Spalten = Wochen (rechts die aktuelle), Zeilen = Mo … So.
-    private func raster(farbe: Color) -> some View {
-        let schritt = zelle + luecke
-        return GeometryReader { geo in
-            let spalten = max(1, Int((geo.size.width + luecke) / schritt))
-            let heute = HabitDatum.kalender.startOfDay(for: Date())
-            let letzteWoche = HabitDatum.wochenAnfang(heute)
-            HStack(spacing: luecke) {
-                ForEach(0..<spalten, id: \.self) { sp in
-                    let woche = HabitDatum.plus(-(spalten - 1 - sp) * 7, letzteWoche)
+/// Kästchen-Raster wie bei HabitKit: Spalten = Wochen (rechts die aktuelle), Zeilen = Mo … So,
+/// oben der Monatsname. Nach rechts wischen = ältere Wochen.
+private struct HabitRaster: View {
+    let habit: Habit
+    let farbe: Color
+    let umschalten: (String) -> Void
+
+    private let zelle: CGFloat = 18
+    private let luecke: CGFloat = 4
+    private let kopf: CGFloat = 14
+
+    var body: some View {
+        let heute = HabitDatum.kalender.startOfDay(for: Date())
+        let letzteWoche = HabitDatum.wochenAnfang(heute)
+        let anzahl = HabitDatum.wochenAnzahl(habit, bis: letzteWoche)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .top, spacing: luecke) {
+                ForEach(0..<anzahl, id: \.self) { sp in
+                    let woche = HabitDatum.plus(-(anzahl - 1 - sp) * 7, letzteWoche)
                     VStack(spacing: luecke) {
+                        Text(HabitDatum.monatsKopf(woche) ?? "")
+                            .font(.caption2.weight(.medium)).foregroundStyle(Tone.ink3)
+                            .fixedSize()
+                            // letzte Spalte: Name nach links, sonst würde er am Rand abgeschnitten
+                            .frame(width: zelle, height: kopf, alignment: sp == anzahl - 1 ? .trailing : .leading)
                         ForEach(0..<7, id: \.self) { z in
                             let tag = HabitDatum.plus(z, woche)
                             let k = HabitDatum.schluessel(tag)
@@ -539,10 +558,144 @@ private struct HabitKarte: View {
                     }
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .frame(height: 7 * schritt - luecke)
+        .defaultScrollAnchor(.trailing)
+        .frame(height: kopf + 7 * (zelle + luecke))
         .accessibilityHidden(true)
+    }
+}
+
+/// Seite einer Gewohnheit: Raster + Monatsübersicht, Stift oben = Bearbeiten.
+private struct HabitDetail: View {
+    let id: UUID
+    @ObservedObject private var s = GymHabitSpeicher.shared
+    @Environment(\.dismiss) private var dismiss
+    @State private var bearbeiten = false
+    @State private var monat = HabitDatum.monatsAnfang(Date())
+
+    var body: some View {
+        let h = s.habits.first { $0.id == id }
+        NavigationStack {
+            ScrollView {
+                if let h {
+                    let farbe = HabitFarbe.farbe(h.farbe)
+                    VStack(alignment: .leading, spacing: 12) {
+                        Card { HabitRaster(habit: h, farbe: farbe) { s.umschalten(id, $0) } }
+                        Card { MonatsKalender(habit: h, farbe: farbe, monat: $monat) { s.umschalten(id, $0) } }
+                    }
+                    .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 28)
+                }
+            }
+            .screenBackground()
+            .navigationTitle(h?.name ?? "")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Bearbeiten", systemImage: "pencil") { bearbeiten = true }
+                }
+                ToolbarItem(placement: .confirmationAction) { Button("Fertig") { dismiss() } }
+            }
+            .sheet(isPresented: $bearbeiten) {
+                if let h {
+                    HabitEditor(habit: h, vorschlagFarbe: h.farbe) { geaendert in
+                        s.habit(geaendert.id) { $0 = geaendert }
+                    } loeschen: {
+                        s.habits.removeAll { $0.id == id }
+                    } verschieben: { richtung in
+                        guard let i = s.habits.firstIndex(where: { $0.id == id }) else { return }
+                        let j = i + richtung
+                        if s.habits.indices.contains(j) { s.habits.swapAt(i, j) }
+                    }
+                }
+            }
+            .onChange(of: h == nil) { _, weg in if weg { dismiss() } }
+        }
+        .sensoryFeedback(.selection, trigger: h?.tage.count ?? 0)
+    }
+}
+
+/// Monatsübersicht: Mo–So, erledigte Tage farbig hinterlegt mit Punkt, antippen = umschalten.
+private struct MonatsKalender: View {
+    let habit: Habit
+    let farbe: Color
+    @Binding var monat: Date
+    let umschalten: (String) -> Void
+
+    var body: some View {
+        let k = HabitDatum.kalender
+        let heute = k.startOfDay(for: Date())
+        let dieserMonat = HabitDatum.monatsAnfang(heute)
+        let start = HabitDatum.wochenAnfang(monat)
+        let tageImMonat = k.range(of: .day, in: .month, for: monat)?.count ?? 30
+        let ende = HabitDatum.plus(tageImMonat - 1, monat)
+        let wochen = (k.dateComponents([.day], from: start, to: HabitDatum.wochenAnfang(ende)).day ?? 28) / 7 + 1
+        let anzahl = (0..<tageImMonat).filter { habit.tage.contains(HabitDatum.schluessel(HabitDatum.plus($0, monat))) }.count
+        let spalten = Array(repeating: GridItem(.flexible(), spacing: 6), count: 7)
+        VStack(spacing: 12) {
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(monat, format: .dateTime.month(.wide).year().locale(Locale(identifier: "de_DE")))
+                        .font(.headline).foregroundStyle(Tone.ink)
+                    Text(anzahl == 1 ? "1 Tag" : "\(anzahl) Tage").font(.caption).foregroundStyle(Tone.ink2)
+                }
+                Spacer()
+                if monat != dieserMonat {
+                    Button("Heute") { blaettern(zu: dieserMonat) }
+                        .font(.subheadline.weight(.medium)).foregroundStyle(Tone.ink)
+                        .padding(.horizontal, 12).frame(height: 34)
+                        .background(Tone.sunken, in: Capsule())
+                        .buttonStyle(PressStyle())
+                }
+                rund("chevron.left") { blaettern(um: -1) }
+                rund("chevron.right") { blaettern(um: 1) }.disabled(monat >= dieserMonat).opacity(monat >= dieserMonat ? 0.35 : 1)
+            }
+            LazyVGrid(columns: spalten, spacing: 6) {
+                ForEach(["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"], id: \.self) { t in
+                    Text(t).font(.caption.weight(.medium)).foregroundStyle(Tone.ink3)
+                }
+                ForEach(0..<(wochen * 7), id: \.self) { i in
+                    let tag = HabitDatum.plus(i, start)
+                    let schluessel = HabitDatum.schluessel(tag)
+                    let fertig = habit.tage.contains(schluessel)
+                    let imMonat = k.isDate(tag, equalTo: monat, toGranularity: .month)
+                    VStack(spacing: 3) {
+                        Text("\(k.component(.day, from: tag))")
+                            .font(.figure(15)).monospacedDigit()
+                            .foregroundStyle(fertig ? Tone.ink : Tone.ink2)
+                        Circle().fill(fertig ? farbe : .clear).frame(width: 4, height: 4)
+                    }
+                    .frame(maxWidth: .infinity).frame(height: 44)
+                    .background(fertig ? farbe.opacity(0.22) : .clear, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay {
+                        if tag == heute { RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(farbe, lineWidth: 1.5) }
+                    }
+                    .opacity(tag > heute ? 0.3 : imMonat ? 1 : 0.4)
+                    .contentShape(Rectangle())
+                    .onTapGesture { if tag <= heute { umschalten(schluessel) } }
+                }
+            }
+        }
+        .contentShape(Rectangle())
+        // Links/rechts wischen = anderer Monat
+        .gesture(DragGesture(minimumDistance: 30).onEnded { g in
+            guard abs(g.translation.width) > abs(g.translation.height) * 1.5 else { return }
+            if g.translation.width < 0 { if monat < dieserMonat { blaettern(um: 1) } } else { blaettern(um: -1) }
+        })
+        .sensoryFeedback(.selection, trigger: monat)
+    }
+
+    private func rund(_ symbol: String, _ aktion: @escaping () -> Void) -> some View {
+        Button(action: aktion) {
+            Image(systemName: symbol).font(.subheadline.weight(.semibold)).foregroundStyle(Tone.ink)
+                .frame(width: 34, height: 34).background(Tone.sunken, in: Circle())
+        }
+        .buttonStyle(PressStyle())
+    }
+    private func blaettern(um n: Int) {
+        if let neu = HabitDatum.kalender.date(byAdding: .month, value: n, to: monat) { blaettern(zu: neu) }
+    }
+    private func blaettern(zu neu: Date) {
+        withAnimation(.snappy(duration: 0.25)) { monat = HabitDatum.monatsAnfang(neu) }
     }
 }
 
@@ -609,4 +762,4 @@ private struct HabitEditor: View {
         .presentationDetents([.medium, .large])
     }
 }
-// Ende Version 3
+// Ende Version 4
