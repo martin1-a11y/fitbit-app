@@ -1,4 +1,4 @@
-// Version 2 · Gym-Tab und Habit-Tracker: Zusatz zu Pebble (github.com/medpar/pebble, Stand ac1b90f)
+// Version 3 · Gym-Tab und Habit-Tracker: Zusatz zu Pebble (github.com/medpar/pebble, Stand ac1b90f)
 // Bauplan: siehe Repo „Projekte“ (privat), fitbit/archiv/GYM-HABITS.md. Braucht das Armband nicht – nur Oberfläche + Speicher auf dem iPhone.
 // Eingehängt über zwei kleine Änderungen, die einbauen.sh macht:
 //   PebbleApp.swift  → Tab „Gym“ (GymScreen) in RootView
@@ -250,28 +250,26 @@ private struct UebungZeile: View {
     let bearbeiten: () -> Void
     var body: some View {
         let fertig = uebung.erledigt
-        HStack(spacing: 12) {
+        // Kompakt wie die Vorschau beim Einfügen: kein Kreis links, erledigt = grau + durchgestrichen
+        HStack(spacing: 10) {
             Button(action: abhaken) {
-                HStack(spacing: 12) {
-                    Image(systemName: fertig ? "checkmark.circle.fill" : "circle")
-                        .font(.title3).foregroundStyle(fertig ? Tone.ink3 : Tone.moss)
-                    Text(uebung.name).font(.body.weight(.medium))
-                        .foregroundStyle(fertig ? Tone.ink3 : Tone.ink)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .contentShape(Rectangle())
+                Text(uebung.name).font(.body)
+                    .strikethrough(fertig, color: Tone.ink3)
+                    .foregroundStyle(fertig ? Tone.ink3 : Tone.ink)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(PressStyle())
             Button(action: bearbeiten) {
                 Text(uebung.gewicht.isEmpty ? "–" : uebung.gewicht)
-                    .font(.figure(22)).monospacedDigit()
+                    .font(.figure(17)).monospacedDigit()
                     .foregroundStyle(fertig ? Tone.ink3 : Tone.ink)
-                    .padding(.horizontal, 12).frame(minHeight: 36)
-                    .background(Tone.sunken, in: Capsule())
+                    .padding(.horizontal, 10).frame(minHeight: 28)
+                    .background(Tone.sunken.opacity(fertig ? 0.5 : 1), in: Capsule())
             }
             .buttonStyle(PressStyle())
         }
-        .padding(.vertical, 4)
         .animation(.easeOut(duration: 0.15), value: fertig)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(uebung.name), \(uebung.gewicht)\(fertig ? ", erledigt" : "")")
@@ -611,4 +609,4 @@ private struct HabitEditor: View {
         .presentationDetents([.medium, .large])
     }
 }
-// Ende Version 2
+// Ende Version 3
