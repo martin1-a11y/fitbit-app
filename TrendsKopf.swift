@@ -1,4 +1,4 @@
-// Version 2 · Zusatz zu Pebble: einbauen.sh setzt diesen Block in App/UI/TrendsScreen.swift ein und ersetzt
+// Version 3 · Zusatz zu Pebble: einbauen.sh setzt diesen Block in App/UI/TrendsScreen.swift ein und ersetzt
 // dort TrendTopic, TrendsScreen und TopicBar (alles vor MetricTrendView). Wird NICHT als eigene Datei mitgebaut.
 // - Chip „Habits“ (HabitTrackerView aus GymHabits.swift)
 // - Reihenfolge der Chips: Chip halten, dann nach links/rechts ziehen (gemerkt in „fitbitTimer.trendReihenfolge“)
@@ -35,14 +35,17 @@ struct TrendsScreen: View {
     @State private var gestartet = false
     @State private var weeks = 4
     @State private var methods = false
+    // Ziehen der Chips: Reihenfolge während des Ziehens, gezogener Chip, Lage der Chips (ohne Neuzeichnen gemerkt)
+    @State private var reihe: [TrendTopic] = []
+    @State private var gezogen: TrendTopic?
+    @State private var verschoben = 0
+    @State private var rahmen = ChipRahmen()
 
     var body: some View {
         let liste = TrendTopic.reihenfolge(gemerkt)
         NavigationStack {
             VStack(spacing: 0) {
-                TopicBar(topic: $topic, liste: liste) { neu in
-                    gemerkt = neu.map(\.id).joined(separator: "|")
-                }
+                TopicBar(topic: $topic, reihe: $reihe, gezogen: $gezogen, rahmen: rahmen)
                 .padding(.horizontal, 16).padding(.bottom, 6)
                 TabView(selection: $topic) {
                     ForEach(liste) { item in
@@ -68,8 +71,18 @@ struct TrendsScreen: View {
             .onAppear {
                 // Beim ersten Öffnen mit dem Trend ganz links anfangen
                 if !gestartet { gestartet = true; topic = liste.first ?? topic }
+                if reihe.isEmpty { reihe = liste }
             }
+            .onChange(of: liste) { _, neu in if neu != reihe { reihe = neu } }
         }
+        // Ablage auf dem ganzen Bildschirm: der Finger darf beim Ziehen die Chip-Zeile verlassen,
+        // zählt nur, wie weit links/rechts er ist.
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { rahmen.flaeche = $0 }
+        .onDrop(of: [UTType.text], delegate: ChipAblage(reihe: $reihe, gezogen: $gezogen, rahmen: rahmen) { neu in
+            verschoben += 1
+            gemerkt = neu.map(\.id).joined(separator: "|")
+        })
+        .sensoryFeedback(.impact(weight: .light), trigger: verschoben)
     }
 
     @ViewBuilder private func seite(_ item: TrendTopic) -> some View {
@@ -81,13 +94,17 @@ struct TrendsScreen: View {
     }
 }
 
+/// Lage der Chips auf dem Bildschirm. Klasse, damit Scrollen der Chip-Zeile nichts neu zeichnet.
+private final class ChipRahmen {
+    var chips: [TrendTopic: CGRect] = [:]
+    var flaeche: CGRect = .zero
+}
+
 private struct TopicBar: View {
     @Binding var topic: TrendTopic
-    let liste: [TrendTopic]
-    let geaendert: ([TrendTopic]) -> Void
-    @State private var reihe: [TrendTopic] = []
-    @State private var gezogen: TrendTopic?
-    @State private var verschoben = 0
+    @Binding var reihe: [TrendTopic]
+    @Binding var gezogen: TrendTopic?
+    let rahmen: ChipRahmen
     @Namespace private var selection
 
     var body: some View {
@@ -100,16 +117,13 @@ private struct TopicBar: View {
                             .contentShape(.dragPreview, Capsule())
                             .accessibilityAddTraits(topic == item ? .isSelected : [])
                             .id(item)
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { rahmen.chips[item] = $0 }
                             .onDrag {
                                 gezogen = item
                                 return NSItemProvider(object: item.id as NSString)
                             } preview: {
                                 chip(item, gewaehlt: topic == item, mitAnimation: false)
                             }
-                            .onDrop(of: [UTType.text], delegate: ChipAblage(ziel: item, reihe: $reihe, gezogen: $gezogen) { neu in
-                                verschoben += 1
-                                geaendert(neu)
-                            })
                     }
                 }
             }
@@ -117,10 +131,7 @@ private struct TopicBar: View {
                 withAnimation(.snappy(duration: 0.25)) { leser.scrollTo(neu, anchor: .center) }
             }
         }
-        .onAppear { reihe = liste }
-        .onChange(of: liste) { _, neu in if neu != reihe { reihe = neu } }
         .sensoryFeedback(.selection, trigger: topic)
-        .sensoryFeedback(.impact(weight: .light), trigger: verschoben)
     }
 
     private func chip(_ item: TrendTopic, gewaehlt: Bool, mitAnimation: Bool) -> some View {
@@ -136,24 +147,38 @@ private struct TopicBar: View {
     }
 }
 
-/// Schiebt den gezogenen Chip an die Stelle des Chips unter dem Finger (sofort, nicht erst beim Loslassen).
+/// Schiebt den gezogenen Chip an die Stelle des Chips, über dem der Finger waagrecht steht (sofort, nicht erst
+/// beim Loslassen). Die Höhe des Fingers ist egal; links/rechts neben allen Chips = ganz an den Anfang/ans Ende.
 private struct ChipAblage: DropDelegate {
-    let ziel: TrendTopic
     @Binding var reihe: [TrendTopic]
     @Binding var gezogen: TrendTopic?
+    let rahmen: ChipRahmen
     let geaendert: ([TrendTopic]) -> Void
 
-    func dropEntered(info: DropInfo) {
-        guard let g = gezogen, g != ziel,
-              let von = reihe.firstIndex(of: g), let nach = reihe.firstIndex(of: ziel) else { return }
+    func validateDrop(info: DropInfo) -> Bool { gezogen != nil }
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        schieben(x: rahmen.flaeche.minX + info.location.x)
+        return DropProposal(operation: .move)
+    }
+    func dropEntered(info: DropInfo) { schieben(x: rahmen.flaeche.minX + info.location.x) }
+    func performDrop(info: DropInfo) -> Bool { gezogen = nil; return true }
+
+    private func schieben(x: CGFloat) {
+        guard let g = gezogen, let von = reihe.firstIndex(of: g) else { return }
+        let lagen = reihe.compactMap { t in rahmen.chips[t].map { (t, $0) } }
+        guard let erster = lagen.first, let letzter = lagen.last else { return }
+        let ziel: TrendTopic?
+        if let treffer = lagen.first(where: { $0.1.minX <= x && x <= $0.1.maxX }) { ziel = treffer.0 }
+        else if x < erster.1.minX { ziel = erster.0 }
+        else if x > letzter.1.maxX { ziel = letzter.0 }
+        else { ziel = nil }  // Lücke zwischen zwei Chips: nichts tun (sonst Zappeln)
+        guard let ziel, ziel != g, let nach = reihe.firstIndex(of: ziel) else { return }
         var neu = reihe
         neu.move(fromOffsets: IndexSet(integer: von), toOffset: nach > von ? nach + 1 : nach)
         withAnimation(.snappy(duration: 0.25)) { reihe = neu }
         geaendert(neu)
     }
-    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
-    func performDrop(info: DropInfo) -> Bool { gezogen = nil; return true }
 }
 
-// Ende Version 2 (TrendsKopf)
+// Ende Version 3 (TrendsKopf)
 
