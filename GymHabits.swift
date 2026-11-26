@@ -1,4 +1,4 @@
-// Version 5 · Gym-Tab und Habit-Tracker: Zusatz zu Pebble (github.com/medpar/pebble, Stand ac1b90f)
+// Version 6 · Gym-Tab und Habit-Tracker: Zusatz zu Pebble (github.com/medpar/pebble, Stand ac1b90f)
 // Bauplan: siehe Repo „Projekte“ (privat), fitbit/archiv/GYM-HABITS.md. Braucht das Armband nicht – nur Oberfläche + Speicher auf dem iPhone.
 // Eingehängt über zwei kleine Änderungen, die einbauen.sh macht:
 //   PebbleApp.swift  → Tab „Gym“ (GymScreen) in RootView
@@ -191,6 +191,9 @@ private struct GymTagScreen: View {
             }
         }
         .surfaceRows()
+        // Stoppuhr unten: kleiner Kreis, nach dem Start die Leiste. Als Inset, damit man den
+        // letzten Eintrag darüber hochwischen kann (die Liste springt aber nicht von selbst hoch).
+        .safeAreaInset(edge: .bottom) { StoppuhrLeiste() }
         .navigationTitle(tag?.name ?? "")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -241,6 +244,119 @@ private struct GymTagScreen: View {
                 if !n.isEmpty { s.tag(tagID) { $0.name = n } }
             }
         }
+    }
+}
+
+// MARK: - Stoppuhr (nur im Workout-Tag)
+
+/// Eine Stoppuhr für alle Workout-Tage. Gespeichert wird nur der Startzeitpunkt bzw. die Zeit beim
+/// Pausieren – so stimmt die Anzeige auch nach Tab-Wechsel, Sperren oder Neustart der App.
+final class GymStoppuhr: ObservableObject {
+    static let shared = GymStoppuhr()
+
+    /// Läuft: Zeitpunkt, ab dem gezählt wird (bei Fortsetzen um die bisherige Zeit zurückgesetzt).
+    @Published private(set) var start: Date? { didSet { UserDefaults.standard.set(start?.timeIntervalSince1970, forKey: "gymHabits.stoppuhr.start") } }
+    /// Pausiert: bis dahin gelaufene Zeit.
+    @Published private(set) var pausiert: TimeInterval? { didSet { UserDefaults.standard.set(pausiert, forKey: "gymHabits.stoppuhr.pause") } }
+
+    private init() {
+        let d = UserDefaults.standard
+        start = (d.object(forKey: "gymHabits.stoppuhr.start") as? Double).map { Date(timeIntervalSince1970: $0) }
+        pausiert = d.object(forKey: "gymHabits.stoppuhr.pause") as? Double
+    }
+
+    var aktiv: Bool { start != nil || pausiert != nil }
+    var laeuft: Bool { start != nil && pausiert == nil }
+
+    func zeit(_ jetzt: Date) -> TimeInterval {
+        if let pausiert { return pausiert }
+        guard let start else { return 0 }
+        return max(0, jetzt.timeIntervalSince(start))
+    }
+
+    func starten() { pausiert = nil; start = Date() }
+    func pauseOderWeiter() {
+        if let p = pausiert { start = Date().addingTimeInterval(-p); pausiert = nil }
+        else if start != nil { pausiert = zeit(Date()) }
+    }
+    /// Beenden: Zeit ist weg, es bleibt wieder nur der kleine Kreis.
+    func beenden() { start = nil; pausiert = nil }
+
+    /// „00:19,69“, ab einer Stunde „1:02:03,45“.
+    static func text(_ t: TimeInterval) -> String {
+        let hundertstel = Int(t * 100)
+        let h = hundertstel % 100, s = (hundertstel / 100) % 60, m = (hundertstel / 6000) % 60, std = hundertstel / 360000
+        let rest = String(format: "%02d:%02d,%02d", m, s, h)
+        return std > 0 ? "\(std):" + rest : rest
+    }
+}
+
+private struct StoppuhrLeiste: View {
+    @ObservedObject private var uhr = GymStoppuhr.shared
+    private let orange = Color(red: 1, green: 0.624, blue: 0.039)   // Orange der iPhone-Stoppuhr
+
+    var body: some View {
+        Group {
+            if uhr.aktiv { leiste.transition(.move(edge: .bottom).combined(with: .opacity)) }
+            else { startKreis.transition(.scale(scale: 0.6).combined(with: .opacity)) }
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .padding(.horizontal, 16).padding(.bottom, 8)
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: uhr.aktiv)
+        .sensoryFeedback(.impact(weight: .light), trigger: uhr.laeuft)
+    }
+
+    private var startKreis: some View {
+        Button { uhr.starten() } label: {
+            Image(systemName: "stopwatch")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(orange)
+                .frame(width: 56, height: 56)
+                .background(Color.black, in: Circle())
+                .overlay(Circle().strokeBorder(.white.opacity(0.1)))
+                .shadow(color: .black.opacity(0.3), radius: 8, y: 3)
+        }
+        .buttonStyle(PressStyle())
+        .accessibilityLabel("Stoppuhr starten")
+    }
+
+    private var leiste: some View {
+        HStack(spacing: 12) {
+            Button { uhr.pauseOderWeiter() } label: {
+                Image(systemName: uhr.laeuft ? "pause.fill" : "play.fill")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(orange)
+                    .frame(width: 52, height: 52)
+                    .background(orange.opacity(0.2), in: Circle())
+            }
+            .buttonStyle(PressStyle())
+            .accessibilityLabel(uhr.laeuft ? "Pause" : "Weiter")
+
+            Button { uhr.beenden() } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 52, height: 52)
+                    .background(Color(white: 0.2), in: Circle())
+            }
+            .buttonStyle(PressStyle())
+            .accessibilityLabel("Stoppuhr beenden")
+
+            Spacer(minLength: 4)
+
+            TimelineView(.animation(minimumInterval: 0.01, paused: !uhr.laeuft)) { kontext in
+                Text(GymStoppuhr.text(uhr.zeit(kontext.date)))
+                    .font(.system(size: 44, weight: .light))
+                    .monospacedDigit()
+                    .foregroundStyle(orange)
+                    .lineLimit(1).minimumScaleFactor(0.6)
+            }
+        }
+        .padding(.leading, 12).padding(.trailing, 18).padding(.vertical, 12)
+        .background(Color.black, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 30, style: .continuous).strokeBorder(.white.opacity(0.1)))
+        .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
+        .environment(\.colorScheme, .dark)
     }
 }
 
@@ -768,4 +884,4 @@ private struct HabitEditor: View {
         .presentationDetents([.medium, .large])
     }
 }
-// Ende Version 5
+// Ende Version 6
