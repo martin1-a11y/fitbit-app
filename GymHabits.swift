@@ -333,7 +333,7 @@ private struct StoppuhrLeiste: View {
             .accessibilityLabel(uhr.laeuft ? "Pause" : "Weiter")
 
             Button { uhr.beenden() } label: {
-                Image(systemName: "arrow.clockwise")
+                Image(systemName: "xmark")
                     .font(.system(size: 22, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(width: 52, height: 52)
