@@ -1,4 +1,4 @@
-// Version 4 · Gym-Tab und Habit-Tracker: Zusatz zu Pebble (github.com/medpar/pebble, Stand ac1b90f)
+// Version 5 · Gym-Tab und Habit-Tracker: Zusatz zu Pebble (github.com/medpar/pebble, Stand ac1b90f)
 // Bauplan: siehe Repo „Projekte“ (privat), fitbit/archiv/GYM-HABITS.md. Braucht das Armband nicht – nur Oberfläche + Speicher auf dem iPhone.
 // Eingehängt über zwei kleine Änderungen, die einbauen.sh macht:
 //   PebbleApp.swift  → Tab „Gym“ (GymScreen) in RootView
@@ -459,8 +459,14 @@ struct HabitTrackerView: View {
             ForEach(s.habits) { h in
                 HabitKarte(habit: h) { s.umschalten(h.id, $0) } oeffnen: { offen = h }
             }
-            PillButton(title: "Gewohnheit hinzufügen", symbol: "plus") { neu = true }
-                .padding(.top, 4)
+            // Nur ein „+“ ohne Text (Wunsch des Nutzers)
+            Button { neu = true } label: {
+                Image(systemName: "plus").font(.title3.weight(.semibold)).foregroundStyle(Tone.ink)
+                    .frame(width: 48, height: 48).background(Tone.surface, in: Circle())
+            }
+            .buttonStyle(PressStyle())
+            .accessibilityLabel("Gewohnheit hinzufügen")
+            .padding(.top, 4)
         }
         .sheet(isPresented: $neu) {
             HabitEditor(habit: nil, vorschlagFarbe: s.habits.count) { s.habits.append($0) }
@@ -762,4 +768,4 @@ private struct HabitEditor: View {
         .presentationDetents([.medium, .large])
     }
 }
-// Ende Version 4
+// Ende Version 5

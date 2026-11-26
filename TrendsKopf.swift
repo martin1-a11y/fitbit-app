@@ -1,4 +1,4 @@
-// Version 1 · Zusatz zu Pebble: einbauen.sh setzt diesen Block in App/UI/TrendsScreen.swift ein und ersetzt
+// Version 2 · Zusatz zu Pebble: einbauen.sh setzt diesen Block in App/UI/TrendsScreen.swift ein und ersetzt
 // dort TrendTopic, TrendsScreen und TopicBar (alles vor MetricTrendView). Wird NICHT als eigene Datei mitgebaut.
 // - Chip „Habits“ (HabitTrackerView aus GymHabits.swift)
 // - Reihenfolge der Chips: Chip halten, dann nach links/rechts ziehen (gemerkt in „fitbitTimer.trendReihenfolge“)
@@ -49,9 +49,11 @@ struct TrendsScreen: View {
                         ScrollView {
                             VStack(alignment: .leading, spacing: 12) {
                                 seite(item)
-                                Button { methods = true } label: {
-                                    Label("How these are calculated", systemImage: "book.closed").font(.footnote.weight(.medium)).foregroundStyle(Tone.ink2)
-                                }.buttonStyle(PressStyle()).padding(.horizontal, 4).padding(.top, 4)
+                                if item != .habits {  // bei Habits gibt es nichts zu berechnen
+                                    Button { methods = true } label: {
+                                        Label("How these are calculated", systemImage: "book.closed").font(.footnote.weight(.medium)).foregroundStyle(Tone.ink2)
+                                    }.buttonStyle(PressStyle()).padding(.horizontal, 4).padding(.top, 4)
+                                }
                             }
                             .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 28)
                         }
@@ -153,5 +155,5 @@ private struct ChipAblage: DropDelegate {
     func performDrop(info: DropInfo) -> Bool { gezogen = nil; return true }
 }
 
-// Ende Version 1 (TrendsKopf)
+// Ende Version 2 (TrendsKopf)
 
