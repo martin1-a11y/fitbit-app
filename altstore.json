@@ -13,6 +13,15 @@
       "tintColor": "#3478F6",
       "versions": [
         {
+          "version": "1.1.16",
+          "buildVersion": "16",
+          "date": "2026-11-28T18:12:27Z",
+          "localizedDescription": "Build 16",
+          "downloadURL": "https://github.com/martin1-a11y/fitbit-app/releases/download/build-16/Fitbit-App.ipa",
+          "size": 1322564,
+          "minOSVersion": "18.0"
+        },
+        {
           "version": "1.1.15",
           "buildVersion": "15",
           "date": "2026-11-28T10:46:01Z",
@@ -46,15 +55,6 @@
           "localizedDescription": "Build 12",
           "downloadURL": "https://github.com/martin1-a11y/fitbit-app/releases/download/build-12/Fitbit-App.ipa",
           "size": 1317221,
-          "minOSVersion": "18.0"
-        },
-        {
-          "version": "1.1.11",
-          "buildVersion": "11",
-          "date": "2026-11-26T13:32:33Z",
-          "localizedDescription": "Build 11",
-          "downloadURL": "https://github.com/martin1-a11y/fitbit-app/releases/download/build-11/Fitbit-App.ipa",
-          "size": 1317226,
           "minOSVersion": "18.0"
         }
       ],
