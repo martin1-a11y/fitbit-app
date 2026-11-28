@@ -28,6 +28,11 @@ Bauen von Hand: Reiter **Actions → App bauen → Run workflow**. Fertige Datei
 Macht AltStore selbst, wenn AltServer am Windows-PC läuft (Autostart an) und PC + iPhone im selben WLAN sind
 (iTunes: „Mit diesem iPhone über WLAN synchronisieren“). Notfalls AltStore → My Apps → **Refresh All**.
 
+Fehler **„AltServer could not find this device“ (2003)** – der Laptop findet das iPhone im WLAN nicht. Geprüft und behoben:
+- iPhone: Einstellungen → WLAN → (i) beim Heim-WLAN → **Private WLAN-Adresse: Aus** (das war die Ursache).
+- Windows-Firewall (`wf.msc` → Eingehende Regeln): „Dienst Bonjour“ und AltServer brauchen das Profil **Privat**.
+- Test: Taucht das iPhone ohne Kabel in iTunes auf, klappt auch AltStore.
+
 ## Noch offen
 Ohne die zwei Geräte-Schlüssel des Armbands kann die App nicht mit dem Fitbit Air sprechen (Gym und Habits gehen trotzdem).
 Die Schlüssel werden später über ein Android-Handy geholt – sie kommen **nie** in dieses Repo, nur in den geschützten Speicher des iPhones.

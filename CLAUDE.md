@@ -7,7 +7,7 @@ die App (`.github/workflows/bauen.yml`) und trägt sie in `altstore.json` ein �
 AltStore das Update.
 
 Ablauf: auf dem Arbeits-Branch committen → pushen → PR nach `main` → mergen → kurz sagen, dass das
-Update in ca. 10–20 Minuten in AltStore unter „My Apps“ erscheint.
+Update in ca. 5 Minuten in AltStore unter „My Apps“ erscheint.
 
 ## Sprache
 Antworten, Commit-Nachrichten und Code-Kommentare auf Deutsch.
