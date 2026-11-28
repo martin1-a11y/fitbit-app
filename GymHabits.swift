@@ -663,7 +663,10 @@ private struct HabitRaster: View {
                             let tag = HabitDatum.plus(z, woche)
                             let k = HabitDatum.schluessel(tag)
                             if tag > heute {
-                                Color.clear.frame(width: zelle, height: zelle)
+                                // Zukunft: nur Umriss als Vorschau, nicht antippbar
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .strokeBorder(Tone.ink3.opacity(0.6), lineWidth: 1)
+                                    .frame(width: zelle, height: zelle)
                             } else {
                                 RoundedRectangle(cornerRadius: 4, style: .continuous)
                                     .fill(habit.tage.contains(k) ? farbe : Tone.sunken)
