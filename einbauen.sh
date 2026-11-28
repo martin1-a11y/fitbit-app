@@ -1,5 +1,5 @@
 #!/bin/sh
-# Version 2 · Baut unsere Zusätze in Pebble ein (wird von GitHub Actions aufgerufen, siehe
+# Version 3 · Baut unsere Zusätze in Pebble ein (wird von GitHub Actions aufgerufen, siehe
 # .github/workflows/bauen.yml). Aufruf:  sh einbauen.sh <Pebble-Ordner>
 # Pebble muss auf dem festen Stand ac1b90f stehen – die Änderungen unten passen genau dazu.
 set -eu
@@ -11,6 +11,7 @@ halt() { echo "FEHLER: $1" >&2; exit 1; }
 # 1. Fitbit-Timer (Siri-Aktionen) und Gym/Habits als eigene Dateien dazulegen
 cp "$HIER/FitbitTimer.swift" App/FitbitTimer.swift
 cp "$HIER/GymHabits.swift" App/UI/GymHabits.swift
+cp "$HIER/Darstellung.swift" App/UI/Darstellung.swift
 
 # 2. Tab „Gym“ in die Leiste unten, Chip „Habits“ unter Trends
 perl -0pi -e 's/(\.tag\(2\)\n)/$1            GymScreen().tabItem { Label("Gym", systemImage: "dumbbell") }.tag(4)\n/' App/UI/PebbleApp.swift
@@ -20,10 +21,16 @@ KOPF="$HIER/TrendsKopf.swift" perl -0pi -e 'BEGIN { local $/; open my $f, "<", $
 grep -q 'fitbitTimer.trendReihenfolge' App/UI/TrendsScreen.swift || halt "Trends-Leiste ließ sich nicht einbauen."
 [ "$(grep -c 'private enum TrendTopic' App/UI/TrendsScreen.swift)" -eq 1 ] || halt "TrendTopic doppelt."
 
+# 2b. Einstellung „Darstellung“ (System/Hell/Dunkel): Schema an RootView, Auswahl im Band-Reiter
+perl -0pi -e 's/(RootView\(tab: \$tab\)\n)(\s*)/$1$2.modifier(DarstellungAnwenden())\n$2/' App/UI/PebbleApp.swift
+grep -q 'DarstellungAnwenden' App/UI/PebbleApp.swift || halt "Darstellung ließ sich nicht an RootView hängen."
+perl -0pi -e 's/(\n(\s*)NavigationLink \{ MethodsScreen\(\) \} label: \{ Text\("Methods & sources"\) \})/\n$2DarstellungAuswahl()$1/' App/UI/BandScreen.swift
+grep -q 'DarstellungAuswahl' App/UI/BandScreen.swift || halt "Darstellungs-Auswahl ließ sich nicht einbauen."
+
 # 3. Eigene App-Kennung (die von Pebble gehört dem Entwickler). AltStore hängt beim
 #    Installieren noch die Kennung deiner Apple-ID an.
 perl -pi -e 's/PRODUCT_BUNDLE_IDENTIFIER "com\.medpar\.air\.companion"/PRODUCT_BUNDLE_IDENTIFIER "de.fitbittimer.app"/' App/CMakeLists.txt
 grep -q 'de.fitbittimer.app' App/CMakeLists.txt || halt "App-Kennung ließ sich nicht setzen."
 
 echo "Zusätze eingebaut."
-# Ende Version 2
+# Ende Version 3
